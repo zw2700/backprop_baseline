@@ -158,49 +158,6 @@ class FF_model(torch.nn.Module):
         scalar_outputs["classification_accuracy"] = classification_accuracy
         return scalar_outputs
 
-    def forward_downstream_classification_model(
-        self, inputs, labels, scalar_outputs=None,
-    ):
-        if scalar_outputs is None:
-            scalar_outputs = {
-                "Loss": torch.zeros(1, device=self.opt.device),
-            }
-
-        z = inputs["neutral_sample"]
-        if not self.opt.model.convolutional:
-            z = z.reshape(z.shape[0], -1)
-        z = self._layer_norm(z)
-
-        input_classification_model = []
-
-        with torch.no_grad():
-            for block_idx, block in enumerate(self.model):
-
-                for layer_idx, layer in enumerate(block):
-                    z = layer(z)
-                    z = self.act_fn.apply(z)
-                    z = self._layer_norm(z)
-
-                if block_idx >= 1 or self.opt.model.num_blocks == 1:
-                    input_classification_model.append(z.reshape(z.shape[0], -1))
-
-                if self.opt.model.convolutional and (block_idx+1) in self.opt.model.conv.pool:
-                    z = F.max_pool2d(z, 2, 2)  # maxpool
-
-        input_classification_model = torch.concat(input_classification_model, dim=-1)
-
-        output = self.linear_classifier(input_classification_model.detach())
-        output = output - torch.max(output, dim=-1, keepdim=True)[0]
-        classification_loss = self.classification_loss(output, labels["class_labels"])
-        classification_accuracy = utils.get_accuracy(
-            self.opt, output.data, labels["class_labels"]
-        )
-
-        scalar_outputs["Loss"] += classification_loss
-        scalar_outputs["classification_loss"] = classification_loss
-        scalar_outputs["classification_accuracy"] = classification_accuracy
-        return scalar_outputs
-
 class LocallyConnected2d(nn.Module):
     def __init__(self, in_channels, out_channels, output_size, kernel_size, stride, padding, bias=True):
         super(LocallyConnected2d, self).__init__()
